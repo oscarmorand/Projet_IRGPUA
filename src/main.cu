@@ -9,7 +9,7 @@
 #include <filesystem>
 #include <numeric>
 
-int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
+void cpu_main()
 {
     // -- Pipeline initialization
 
@@ -102,6 +102,30 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
     // TODO : Don't forget to update this if you change allocation style
     for (int i = 0; i < nb_images; ++i)
         free(images[i].buffer);
+}
+
+void gpu_main()
+{
+    std::cout << "haha gpu" << "\n";
+}
+
+int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
+{
+    if (argc != 2) {
+        std::cout << "Usage: ./main <cpu|gpu|gpu_indus>" << std::endl;
+        return 1;
+    }
+
+    if (strcmp(argv[1], "cpu") == 0) {
+        cpu_main();
+    } else if (strcmp(argv[1], "gpu") == 0) {
+        gpu_main();
+    // } else if (strcmp(argv[1], "gpu_indus") == 0) {
+    //     gpu_indus_main();
+    } else {
+        std::cout << "Usage: ./main <cpu|gpu|gpu_indus>" << std::endl;
+        return 1;
+    }
 
     return 0;
 }
