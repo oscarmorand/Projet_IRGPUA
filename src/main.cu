@@ -1,4 +1,3 @@
-#include "cuda_utils.cuh"
 #include "fix_cpu.cuh"
 #include "fix_gpu.cuh"
 #include "fix_gpu_indus.cuh"
@@ -27,7 +26,7 @@ void cpu_main()
 
     using recursive_directory_iterator = std::filesystem::recursive_directory_iterator;
     std::vector<std::string> filepaths;
-    for (const auto& dir_entry : recursive_directory_iterator("/home/thomas/Projects/irgpua/Projet_IRGPUA/images"))
+    for (const auto& dir_entry : recursive_directory_iterator("/afs/cri.epita.fr/resources/teach/IRGPUA/images"))
         filepaths.emplace_back(dir_entry.path());
 
     // - Init pipeline object
@@ -109,7 +108,7 @@ void cpu_main()
     // Cleaning
     // TODO : Don't forget to update this if you change allocation style
     for (int i = 0; i < nb_images; ++i)
-        free(images[i].buffer);
+        CUDA_CHECK_ERROR(cudaFreeHost(images[i].buffer));
 }
 
 void gpu_main()
@@ -122,7 +121,7 @@ void gpu_main()
 
     using recursive_directory_iterator = std::filesystem::recursive_directory_iterator;
     std::vector<std::string> filepaths;
-    for (const auto& dir_entry : recursive_directory_iterator("/home/thomas/Projects/irgpua/Projet_IRGPUA/images"))
+    for (const auto& dir_entry : recursive_directory_iterator("/afs/cri.epita.fr/resources/teach/IRGPUA/images"))
         filepaths.emplace_back(dir_entry.path());
 
     // - Init pipeline object
@@ -215,7 +214,7 @@ void gpu_main()
     // Cleaning
     // TODO : Don't forget to update this if you change allocation style
     for (int i = 0; i < nb_images; ++i)
-        free(images[i].buffer);
+        CUDA_CHECK_ERROR(cudaFreeHost(images[i].buffer));
 }
 
 int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])

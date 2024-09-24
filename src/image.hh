@@ -8,6 +8,8 @@
 #include <sstream>
 #include <cstdint>
 
+#include "cuda_utils.cuh"
+
 struct Image
 {
     Image() = default;
@@ -44,7 +46,8 @@ struct Image
         {
             // TODO : Isn't there a better way to allocate the CPU Memory
             // To speed up the Host-to-Device Transfert ?
-            buffer = (int *)malloc(width * height * sizeof(int));
+            int *buffer;
+            CUDA_CHECK_ERROR(cudaMallocHost((void**) &buffer, width * height * sizeof(int)));
             infile.seekg(1, infile.cur);
             for (int i = 0; i < width * height; ++i)
             {
@@ -71,7 +74,9 @@ struct Image
             }
             // TODO : Isn't there a better way to allocate the CPU Memory
             // To speed up the Host-to-Device Transfert ?
-            buffer = (int *)malloc(image_size * sizeof(int));
+            int *buffer;
+            CUDA_CHECK_ERROR(cudaMallocHost((void**) &buffer, image_size * sizeof(int)));
+            infile.seekg(1, infile.cur);
 
             std::stringstream lineStream(line);
             std::string s;
