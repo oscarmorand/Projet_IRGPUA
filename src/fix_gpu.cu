@@ -1,7 +1,7 @@
 #include "cuda_utils.cuh"
 #include "fix_gpu.cuh"
 #include "image.hh"
-#include "map_fix_pixels.cuh"
+#include "kernels/map_fix_pixels.cuh"
 #include "kernels/set_predicate.cuh"
 #include "kernels/scatter.cuh"
 
@@ -14,56 +14,9 @@
 #include <rmm/device_uvector.hpp>
 #include <rmm/device_scalar.hpp>
 
-
-__inline__ __device__
-int warp_reduce(int val) {
-    #pragma unroll
-    for (int offset = warpSize / 2; offset > 0; offset /= 2) {
-        val += __shfl_down_sync(~0, val, offset);
-    }
-    return val;
-}
-
-template <typename T, int BLOCK_SIZE>
-__global__
-void kernel_your_reduce(raft::device_span<const T> buffer, raft::device_span<T> total)
-{
-    const unsigned int tid = threadIdx.x;
-    unsigned int id = threadIdx.x + blockIdx.x * BLOCK_SIZE;
-    
-    int sum = 0;
-    while (id < buffer.size() / 4) {
-        int4 val = reinterpret_cast<const int4*>(buffer.data())[id];
-        sum += val.x + val.y + val.z + val.w;
-        id += BLOCK_SIZE * gridDim.x;
-    }
-    id *= 4;
-    while (id < buffer.size()) {
-        sum += buffer[id];
-        id += 1;
-    }
-
-    sum = warp_reduce(sum);
-
-    if (tid % 32 == 0) atomicAdd(total.data(), sum);
-}
-
-void your_reduce(rmm::device_uvector<int>& buffer,
-                 rmm::device_scalar<int>& total)
-{
-    constexpr int blocksize = 64;
-    const int gridsize = (((buffer.size() + blocksize - 1) / blocksize) + 1) / 2;
-
-    kernel_your_reduce<int, blocksize><<<gridsize, blocksize, blocksize * sizeof(int), buffer.stream()>>>(
-        raft::device_span<const int>(buffer.data(), buffer.size()),
-        raft::device_span<int>(total.data(), 1));
-
-    CUDA_CHECK_ERROR(cudaStreamSynchronize(buffer.stream()));
-}
-
 void fix_image_gpu(Image& to_fix, const raft::handle_t handle)
 {
-    const int image_size = to_fix.width * to_fix.height;
+    const unsigned long image_size = to_fix.width * to_fix.height;
 
     // #1 Compact
 
@@ -71,8 +24,8 @@ void fix_image_gpu(Image& to_fix, const raft::handle_t handle)
 
     // std::vector<int> predicate(to_fix.size(), 0);
 
-    rmm::device_uvector<int> predicate(to_fix.size(), buffer.stream());
-    set_predicate(raft::device_span<int>(to_fix.buffer, image_size), raft::device_span<int>(predicate.buffer, image_size), 27, handle.get_stream());
+    rmm::device_uvector<int> predicate(to_fix.size(), handle.get_stream());
+    set_predicate(raft::device_span<int>(to_fix.buffer, image_size), raft::device_span<int>(predicate.data(), image_size), 27, handle.get_stream());
 
 
     // constexpr int garbage_val = -27;
@@ -86,12 +39,11 @@ void fix_image_gpu(Image& to_fix, const raft::handle_t handle)
 
     // Scatter to the corresponding addresses
 
-    scatter(raft::device_span<int>(to_fix.buffer, image_size), raft::device_span<int>(predicate.buffer, image_size), 27, handle.get_stream());
+    scatter(raft::device_span<int>(to_fix.buffer, image_size), raft::device_span<int>(predicate.data(), image_size), 27, handle.get_stream());
 
     // #2 Apply map to fix pixels
 
-    map_fix_pixels(raft::device_span<int>(to_fix.buffer, image_size),
-                    handle.get_stream());
+    map_fix_pixels(raft::device_span<int>(to_fix.buffer, image_size), handle.get_stream());
 
     // #3 Histogram equalization
 
