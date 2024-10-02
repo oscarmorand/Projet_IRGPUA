@@ -160,7 +160,10 @@ void gpu_main()
         // There are still ways to speeds this process of course
 
         images[i] = pipeline.get_image(i);
-        fix_image_gpu(images[i]);
+
+        const raft::handle_t handle{};
+
+        fix_image_gpu(images[i], handle);
     }
 
     std::cout << "Done with compute, starting stats" << std::endl;

@@ -1,15 +1,14 @@
 #include "fix_gpu.cuh"
 #include "image.hh"
+#include "map_fix_pixels.cuh"
 
 #include <array>
 #include <numeric>
 #include <algorithm>
 #include <cmath>
 
-void fix_image_gpu(Image& to_fix)
+void fix_image_gpu(Image& to_fix, const raft::handle_t handle)
 {
-    // FIXME
-
     const int image_size = to_fix.width * to_fix.height;
 
     // #1 Compact
@@ -36,17 +35,8 @@ void fix_image_gpu(Image& to_fix)
 
     // #2 Apply map to fix pixels
 
-    for (int i = 0; i < image_size; ++i)
-    {
-        if (i % 4 == 0)
-            to_fix.buffer[i] += 1;
-        else if (i % 4 == 1)
-            to_fix.buffer[i] -= 5;
-        else if (i % 4 == 2)
-            to_fix.buffer[i] += 3;
-        else if (i % 4 == 3)
-            to_fix.buffer[i] -= 8;
-    }
+    map_fix_pixels(raft::device_span<int>(to_fix.buffer, image_size),
+                    handle.get_stream());
 
     // #3 Histogram equalization
 
