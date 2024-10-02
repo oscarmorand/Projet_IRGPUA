@@ -122,7 +122,7 @@ void gpu_main()
 
     using recursive_directory_iterator = std::filesystem::recursive_directory_iterator;
     std::vector<std::string> filepaths;
-    for (const auto& dir_entry : recursive_directory_iterator("/home/thomas/Projects/irgpua/Projet_IRGPUA/images"))
+    for (const auto& dir_entry : recursive_directory_iterator("/afs/cri.epita.fr/resources/teach/IRGPUA/images"))
         filepaths.emplace_back(dir_entry.path());
 
     // - Init pipeline object
