@@ -13,6 +13,6 @@ void set_predicate(raft::device_span<int> to_fix, raft::device_span<int> predica
 {
     const int block_size = 1024;
     int gridsize = (to_fix.size() + block_size - 1) / block_size;
-    set_predicate_kernel<<<gridsize, block_size, 0, stream>>>(to_fix, predicate, -27);
+    set_predicate_kernel<<<gridsize, block_size, 0, stream>>>(to_fix, predicate, garbage_val);
     CUDA_CHECK_ERROR(cudaGetLastError());
 }

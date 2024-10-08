@@ -4,6 +4,7 @@
 #include "kernels/map_fix_pixels.cuh"
 #include "kernels/set_predicate.cuh"
 #include "kernels/scatter.cuh"
+#include "kernels/scan.cuh"
 
 #include <array>
 #include <numeric>
@@ -12,11 +13,7 @@
 
 void fix_image_gpu(rmm::device_uvector<int>& to_fix, unsigned long image_size, const raft::handle_t handle)
 {
-    // #1 Compact
-
     // Build predicate vector
-
-    // std::vector<int> predicate(to_fix.size(), 0);
 
     std::cout << to_fix.size() << std::endl;
     std::cout << handle.get_stream() << std::endl;
@@ -25,20 +22,14 @@ void fix_image_gpu(rmm::device_uvector<int>& to_fix, unsigned long image_size, c
     set_predicate(
         raft::device_span<int>(to_fix.data(), image_size),
         raft::device_span<int>(predicate.data(), image_size),
-        27,
+        -27,
         handle.get_stream());
-
-
-    // constexpr int garbage_val = -27;
-    // for (int i = 0; i < to_fix.size(); ++i)
-    //     if (to_fix.buffer[i] != garbage_val)
-    //         predicate[i] = 1;
 
     // Compute the exclusive sum of the predicate
 
-    std::cout << "predicate done" << std::endl;
-
-    //std::exclusive_scan(predicate.begin(), predicate.end(), predicate.begin(), 0);
+    exclusive_scan(
+        raft::device_span<int>(predicate.data(), image_size),
+        handle.get_stream());
 
     // Scatter to the corresponding addresses
 

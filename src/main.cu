@@ -147,6 +147,7 @@ void gpu_main()
     // -- Main loop containing image retring from pipeline and fixing
 
     int nb_images = pipeline.images.size();
+    nb_images = 2;
     std::vector<Image> images(nb_images);
 
     // - Const variables
@@ -190,6 +191,14 @@ void gpu_main()
         ));
 
         fix_image_gpu(d_image, image_size, handle);
+
+        CUDA_CHECK_ERROR(cudaMemcpyAsync(
+            thrust::raw_pointer_cast(images[i].buffer),
+            d_image.data(),
+            image_size * sizeof(int),
+            cudaMemcpyDeviceToHost,
+            handle.get_stream()
+        ));
     }
 
     std::cout << "Done with compute, starting stats" << std::endl;
