@@ -4,7 +4,7 @@ __global__
 void set_predicate_kernel(raft::device_span<int> buffer, raft::device_span<int> predicate, const int garbage_val) 
 {
     unsigned int id = threadIdx.x + blockIdx.x * blockDim.x;
-    if (id < buffer.size())
+    if (id >= buffer.size())
         return;
     predicate[id] = (buffer[id] == garbage_val);
 }

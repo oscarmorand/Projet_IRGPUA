@@ -146,7 +146,7 @@ void gpu_main()
 
     // -- Main loop containing image retring from pipeline and fixing
 
-    const int nb_images = pipeline.images.size();
+    int nb_images = pipeline.images.size();
     std::vector<Image> images(nb_images);
 
     // - Const variables
@@ -175,10 +175,21 @@ void gpu_main()
         // There are still ways to speeds this process of course
 
         images[i] = pipeline.get_image(i);
+        auto image_size = images[i].width * images[i].height;
 
         const raft::handle_t handle{};
 
-        fix_image_gpu(images[i], handle);
+        rmm::device_uvector<int> d_image(image_size, handle.get_stream());
+
+        CUDA_CHECK_ERROR(cudaMemcpyAsync(
+            d_image.data(),
+            thrust::raw_pointer_cast(images[i].buffer),
+            image_size * sizeof(int),
+            cudaMemcpyHostToDevice,
+            handle.get_stream()
+        ));
+
+        fix_image_gpu(d_image, image_size, handle);
     }
 
     std::cout << "Done with compute, starting stats" << std::endl;
