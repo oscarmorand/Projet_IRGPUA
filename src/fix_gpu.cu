@@ -35,7 +35,7 @@ void fix_image_gpu(rmm::device_uvector<int>& to_fix, unsigned long image_size, c
 
     scatter(raft::device_span<int>(to_fix.data(), image_size),
         raft::device_span<int>(predicate.data(), image_size),
-        27,
+        -27,
         handle.get_stream());
 
     // #2 Apply map to fix pixels

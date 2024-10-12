@@ -215,3 +215,15 @@ void exclusive_scan(raft::device_span<int> buffer, cudaStream_t stream)
 
     CUDA_CHECK_ERROR(cudaGetLastError());
 }
+
+
+__global__ void get_new_size_kernel(raft::device_span<int> buffer, raft::device_span<int> new_size) 
+{
+    new_size[0] = buffer[buffer.size() - 1];
+}
+
+void get_new_size(raft::device_span<int> buffer, raft::device_span<int> new_size, cudaStream_t stream) 
+{
+    get_new_size_kernel<<<1, 1, 0, stream>>>(buffer, new_size);
+    CUDA_CHECK_ERROR(cudaGetLastError());
+}

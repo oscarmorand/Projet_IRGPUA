@@ -6,7 +6,7 @@ void set_predicate_kernel(raft::device_span<int> buffer, raft::device_span<int> 
     unsigned int id = threadIdx.x + blockIdx.x * blockDim.x;
     if (id >= buffer.size())
         return;
-    predicate[id] = (buffer[id] == garbage_val);
+    predicate[id] = (buffer[id] != garbage_val);
 }
 
 void set_predicate(raft::device_span<int> to_fix, raft::device_span<int> predicate, const int garbage_val, cudaStream_t stream)

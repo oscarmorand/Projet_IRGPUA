@@ -147,7 +147,7 @@ void gpu_main()
     // -- Main loop containing image retring from pipeline and fixing
 
     int nb_images = pipeline.images.size();
-    nb_images = 2;
+    nb_images = 1;
     std::vector<Image> images(nb_images);
 
     // - Const variables
