@@ -5,6 +5,8 @@
 #include "kernels/set_predicate.cuh"
 #include "kernels/scatter.cuh"
 #include "kernels/scan.cuh"
+#include "kernels/histogram.cuh"
+#include "kernels/equalization.cuh"
 
 #include <array>
 #include <numeric>
@@ -15,8 +17,6 @@ void fix_image_gpu(rmm::device_uvector<int>& to_fix, unsigned long image_size, c
 {
     // Build predicate vector
 
-    std::cout << to_fix.size() << std::endl;
-    std::cout << handle.get_stream() << std::endl;
     rmm::device_uvector<int> predicate(image_size, handle.get_stream());
 
     set_predicate(
@@ -45,31 +45,20 @@ void fix_image_gpu(rmm::device_uvector<int>& to_fix, unsigned long image_size, c
 
     // #3 Histogram equalization
 
-    // Histogram
+    rmm::device_uvector<int> histo(256, handle.get_stream());
 
-    /*
-    std::array<int, 256> histo;
-    histo.fill(0);
-    for (int i = 0; i < image_size; ++i)
-        ++histo[to_fix.buffer[i]];
+    compute_histogram(raft::device_span<int>(to_fix.data(), image_size),
+        raft::device_span<int>(histo.data(), 256),
+        handle.get_stream());
 
     // Compute the inclusive sum scan of the histogram
 
-    std::inclusive_scan(histo.begin(), histo.end(), histo.begin());
+    inclusive_scan(raft::device_span<int>(histo.data(), 256),
+        handle.get_stream());
 
-    // Find the first non-zero value in the cumulative histogram
+    // Histogram equalization of the image
 
-    auto first_none_zero = std::find_if(histo.begin(), histo.end(), [](auto v) { return v != 0; });
-
-    const int cdf_min = *first_none_zero;
-
-    // Apply the map transformation of the histogram equalization
-
-    std::transform(to_fix.buffer, to_fix.buffer + image_size, to_fix.buffer,
-        [image_size, cdf_min, &histo](int pixel)
-            {
-                return std::roundf(((histo[pixel] - cdf_min) / static_cast<float>(image_size - cdf_min)) * 255.0f);
-            }
-    );
-    */
+    equalize_histogram(raft::device_span<int>(to_fix.data(), image_size),
+        raft::device_span<int>(histo.data(), 256),
+        handle.get_stream());
 }

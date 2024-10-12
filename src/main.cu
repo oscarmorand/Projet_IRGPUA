@@ -199,7 +199,11 @@ void gpu_main()
             cudaMemcpyDeviceToHost,
             handle.get_stream()
         ));
+
+        CUDA_CHECK_ERROR(cudaStreamSynchronize(handle.get_stream()));
     }
+
+    CUDA_CHECK_ERROR(cudaDeviceSynchronize());
 
     std::cout << "Done with compute, starting stats" << std::endl;
 
@@ -234,6 +238,7 @@ void gpu_main()
     // TODO OPTIONAL : make it GPU compatible (aka faster)
     std::sort(to_sort.begin(), to_sort.end(), [](ToSort a, ToSort b) {
         return a.total < b.total;
+    std::cout << "Image fixed" << std::endl;
     });
 
     // TODO : Test here that you have the same results
