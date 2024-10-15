@@ -2,16 +2,10 @@
 
 __global__ void map_fix_pixels_kernel(raft::device_span<int> buffer) {
     const int id = threadIdx.x + blockIdx.x * blockDim.x;
+    const int arr[4] = {1, -5, 3, -8};
     if (id < buffer.size())
     {
-        if (id % 4 == 0)
-            buffer[id] += 1;
-        else if (id % 4 == 1)
-            buffer[id] -= 5;
-        else if (id % 4 == 2)
-            buffer[id] += 3;
-        else if (id % 4 == 3)
-            buffer[id] -= 8;
+        buffer[id] += arr[id % 4];
     }
 }
 

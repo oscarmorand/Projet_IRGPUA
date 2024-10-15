@@ -16,25 +16,25 @@
 void fix_image_gpu(rmm::device_uvector<int>& to_fix, unsigned long image_size, const raft::handle_t handle)
 {
     // Build predicate vector
-
-    rmm::device_uvector<int> predicate(image_size, handle.get_stream());
+    const int actual_size = to_fix.size();
+    rmm::device_uvector<int> predicate(actual_size, handle.get_stream());
 
     set_predicate(
-        raft::device_span<int>(to_fix.data(), image_size),
-        raft::device_span<int>(predicate.data(), image_size),
+        raft::device_span<int>(to_fix.data(), actual_size),
+        raft::device_span<int>(predicate.data(), actual_size),
         -27,
         handle.get_stream());
 
     // Compute the exclusive sum of the predicate
 
     exclusive_scan(
-        raft::device_span<int>(predicate.data(), image_size),
+        raft::device_span<int>(predicate.data(), actual_size),
         handle.get_stream());
 
     // Scatter to the corresponding addresses
 
-    scatter(raft::device_span<int>(to_fix.data(), image_size),
-        raft::device_span<int>(predicate.data(), image_size),
+    scatter(raft::device_span<int>(to_fix.data(), actual_size),
+        raft::device_span<int>(predicate.data(), actual_size),
         -27,
         handle.get_stream());
 
@@ -43,22 +43,22 @@ void fix_image_gpu(rmm::device_uvector<int>& to_fix, unsigned long image_size, c
     map_fix_pixels(raft::device_span<int>(to_fix.data(), image_size),
         handle.get_stream());
 
-    // #3 Histogram equalization
+    // // #3 Histogram equalization
 
-    rmm::device_uvector<int> histo(256, handle.get_stream());
+    // rmm::device_uvector<int> histo(256, handle.get_stream());
 
-    compute_histogram(raft::device_span<int>(to_fix.data(), image_size),
-        raft::device_span<int>(histo.data(), 256),
-        handle.get_stream());
+    // compute_histogram(raft::device_span<int>(to_fix.data(), image_size),
+    //     raft::device_span<int>(histo.data(), 256),
+    //     handle.get_stream());
 
-    // Compute the inclusive sum scan of the histogram
+    // // Compute the inclusive sum scan of the histogram
 
-    inclusive_scan(raft::device_span<int>(histo.data(), 256),
-        handle.get_stream());
+    // inclusive_scan(raft::device_span<int>(histo.data(), 256),
+    //     handle.get_stream());
 
-    // Histogram equalization of the image
+    // // Histogram equalization of the image
 
-    equalize_histogram(raft::device_span<int>(to_fix.data(), image_size),
-        raft::device_span<int>(histo.data(), 256),
-        handle.get_stream());
+    // equalize_histogram(raft::device_span<int>(to_fix.data(), image_size),
+    //     raft::device_span<int>(histo.data(), 256),
+    //     handle.get_stream());
 }

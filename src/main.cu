@@ -86,6 +86,7 @@ void cpu_main()
     {
         auto& image = images[i];
         const int image_size = image.width * image.height;
+        std::cout << "actual size : " << image.size() << " -- " << image_size << std::endl;
         image.to_sort.total = std::reduce(image.buffer, image.buffer + image_size, 0);
     }
 
@@ -176,16 +177,17 @@ void gpu_main()
         // There are still ways to speeds this process of course
 
         images[i] = pipeline.get_image(i);
-        auto image_size = images[i].width * images[i].height;
+        auto image_size = images[i].height * images[i].width;
+        const int actual_size = images[i].size();
 
         const raft::handle_t handle{};
 
-        rmm::device_uvector<int> d_image(image_size, handle.get_stream());
+        rmm::device_uvector<int> d_image(actual_size, handle.get_stream());
 
         CUDA_CHECK_ERROR(cudaMemcpyAsync(
             d_image.data(),
             thrust::raw_pointer_cast(images[i].buffer),
-            image_size * sizeof(int),
+            actual_size * sizeof(int),
             cudaMemcpyHostToDevice,
             handle.get_stream()
         ));

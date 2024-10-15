@@ -3,11 +3,16 @@
 __global__
 void scatter_kernel(raft::device_span<int> buffer, raft::device_span<int> predicate, const int garbage_val) 
 {
+    __shared__ int s_buffer[1024];
     unsigned int i = threadIdx.x + blockIdx.x * blockDim.x;
     if (i >= buffer.size())
         return;
-    if (buffer[i] != garbage_val)
-        buffer[predicate[i]] = buffer[i];
+
+    s_buffer[threadIdx.x] = buffer[i];
+    __syncthreads();
+
+    if (s_buffer[threadIdx.x] != garbage_val)
+        buffer[predicate[i]] = s_buffer[threadIdx.x];
 }
 
 void scatter(raft::device_span<int> buffer, raft::device_span<int> predicate, const int garbage_val, cudaStream_t stream) 
