@@ -86,7 +86,6 @@ void cpu_main()
     {
         auto& image = images[i];
         const int image_size = image.width * image.height;
-        std::cout << "actual size : " << image.size() << " -- " << image_size << std::endl;
         image.to_sort.total = std::reduce(image.buffer, image.buffer + image_size, 0);
     }
 
@@ -147,8 +146,7 @@ void gpu_main()
 
     // -- Main loop containing image retring from pipeline and fixing
 
-    int nb_images = pipeline.images.size();
-    nb_images = 1;
+    const int nb_images = pipeline.images.size();
     std::vector<Image> images(nb_images);
 
     // - Const variables
@@ -191,8 +189,127 @@ void gpu_main()
             cudaMemcpyHostToDevice,
             handle.get_stream()
         ));
-
         fix_image_gpu(d_image, image_size, handle);
+
+        CUDA_CHECK_ERROR(cudaMemcpyAsync(
+            thrust::raw_pointer_cast(images[i].buffer),
+            d_image.data(),
+            image_size * sizeof(int),
+            cudaMemcpyDeviceToHost,
+            handle.get_stream()
+        ));
+
+        CUDA_CHECK_ERROR(cudaStreamSynchronize(handle.get_stream()));
+    }
+
+    CUDA_CHECK_ERROR(cudaDeviceSynchronize());
+
+    std::cout << "Done with compute, starting stats" << std::endl;
+
+    // -- All images are now fixed : compute stats (total then sort)
+
+    // - First compute the total of each image
+
+    // TODO : make it GPU compatible (aka faster)
+    // You can use multiple CPU threads for your GPU version using openmp or not
+    // Up to you :)
+    #pragma omp parallel for
+    for (int i = 0; i < nb_images; ++i)
+    {
+        auto& image = images[i];
+        const int image_size = image.width * image.height;
+        image.to_sort.total = std::reduce(image.buffer, image.buffer + image_size, 0);
+    }
+
+    // - All totals are known, sort images accordingly (OPTIONAL)
+    // Moving the actual images is too expensive, sort image indices instead
+    // Copying to an id array and sort it instead
+
+    // TODO OPTIONAL : for you GPU version you can store it the way you want
+    // But just like the CPU version, moving the actual images while sorting will be too slow
+    using ToSort = Image::ToSort;
+    std::vector<ToSort> to_sort(nb_images);
+    std::generate(to_sort.begin(), to_sort.end(), [n = 0, images] () mutable
+    {
+        return images[n++].to_sort;
+    });
+
+    // TODO OPTIONAL : make it GPU compatible (aka faster)
+    std::sort(to_sort.begin(), to_sort.end(), [](ToSort a, ToSort b) {
+        return a.total < b.total;
+    std::cout << "Image fixed" << std::endl;
+    });
+
+    // TODO : Test here that you have the same results
+    // You can compare visually and should compare image vectors values and "total" values
+    // If you did the sorting, check that the ids are in the same order
+    for (int i = 0; i < nb_images; ++i)
+    {
+        std::cout << "Image #" << images[i].to_sort.id << " total : " << images[i].to_sort.total << std::endl;
+        std::ostringstream oss;
+        oss << "Image#" << images[i].to_sort.id << ".pgm";
+        std::string str = oss.str();
+        images[i].write(str);
+    }
+
+    std::cout << "Done, the internet is safe now :)" << std::endl;
+
+    // Cleaning
+    // TODO : Don't forget to update this if you change allocation style
+    for (int i = 0; i < nb_images; ++i)
+        free(images[i].buffer);
+}
+
+
+void gpu_indus_main()
+{
+    // -- Pipeline initialization
+
+    std::cout << "GPU Mode - File loading..." << std::endl;
+
+    // - Get file paths
+
+    using recursive_directory_iterator = std::filesystem::recursive_directory_iterator;
+    std::vector<std::string> filepaths;
+    for (const auto& dir_entry : recursive_directory_iterator("/afs/cri.epita.fr/resources/teach/IRGPUA/images"))
+        filepaths.emplace_back(dir_entry.path());
+
+    // - Init pipeline object
+
+    Pipeline pipeline(filepaths);
+
+    // -- Main loop containing image retring from pipeline and fixing
+
+    const int nb_images = pipeline.images.size();
+    //nb_images = 1;
+    std::vector<Image> images(nb_images);
+
+    // - Memory pool
+
+    auto memory_resource = make_pool();
+    rmm::mr::set_current_device_resource(memory_resource.get());
+
+    std::cout << "Done, starting compute" << std::endl;
+
+    #pragma omp parallel for
+    for (int i = 0; i < nb_images; ++i)
+    {
+        images[i] = pipeline.get_image(i);
+        auto image_size = images[i].height * images[i].width;
+        const int actual_size = images[i].size();
+
+        const raft::handle_t handle{};
+
+        rmm::device_uvector<int> d_image(actual_size, handle.get_stream());
+
+        CUDA_CHECK_ERROR(cudaMemcpyAsync(
+            d_image.data(),
+            thrust::raw_pointer_cast(images[i].buffer),
+            actual_size * sizeof(int),
+            cudaMemcpyHostToDevice,
+            handle.get_stream()
+        ));
+        fix_image_gpu_indus(d_image, image_size, handle);
 
         CUDA_CHECK_ERROR(cudaMemcpyAsync(
             thrust::raw_pointer_cast(images[i].buffer),
@@ -276,6 +393,8 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
         gpu_main();
     // } else if (strcmp(argv[1], "gpu_indus") == 0) {
     //     gpu_indus_main();
+    } else if (strcmp(argv[1], "gpu_indus") == 0) {
+        gpu_indus_main();
     } else {
         std::cout << "Usage: ./main <cpu|gpu|gpu_indus>" << std::endl;
         return 1;
