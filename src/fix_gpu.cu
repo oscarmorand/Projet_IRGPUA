@@ -20,6 +20,7 @@
 #include <thrust/copy.h>
 #include <thrust/host_vector.h>
 #include <string>
+
 void write_uvector_to_file(rmm::device_uvector<int>& d_vector, std::string m = "", int size = 0) {
     auto filename = "outgpu.txt";
     // Create a thrust host vector to copy the device vector into
@@ -45,7 +46,7 @@ void write_uvector_to_file(rmm::device_uvector<int>& d_vector, std::string m = "
             file << h_vector[i] << " ";
         }
     } else {
-        for (int i = 0; i < size; i++) {
+        for (int i = size; i < d_vector.size(); i++) {
             file << h_vector[i] << " ";
         }
     }
@@ -53,7 +54,7 @@ void write_uvector_to_file(rmm::device_uvector<int>& d_vector, std::string m = "
     // Close the file
     file.close();
 }
-//!!!!!!!!!!!!!!!!!!
+//!!!!!!!!!!!!!!!!!!!!!11
 
 void fix_image_gpu(rmm::device_uvector<int>& to_fix, unsigned long image_size, const raft::handle_t handle)
 {
@@ -62,22 +63,29 @@ void fix_image_gpu(rmm::device_uvector<int>& to_fix, unsigned long image_size, c
     raft::common::nvtx::range fix_image_gpu("Fix image GPU");
 
     const int actual_size = to_fix.size();
-    rmm::device_uvector<int> predicate(actual_size, handle.get_stream());
 
+    const int padded_size = (std::ceil(static_cast<float>(actual_size) / 64) * 64);
+
+    std::cout << "Actual size: " << actual_size << std::endl;
+    std::cout << "Padded size: " << padded_size << std::endl;
+
+    rmm::device_uvector<int> predicate(padded_size, handle.get_stream());
     raft::common::nvtx::push_range("Set predicate");
     set_predicate(
         raft::device_span<int>(to_fix.data(), actual_size),
-        raft::device_span<int>(predicate.data(), actual_size),
+        raft::device_span<int>(predicate.data(), padded_size),
         -27,
+        padded_size,
         handle.get_stream());
     raft::common::nvtx::pop_range();
 
     // Compute the exclusive sum of the predicate
     raft::common::nvtx::push_range("Exclusive scan");
     exclusive_scan(
-        raft::device_span<int>(predicate.data(), actual_size),
+        raft::device_span<int>(predicate.data(), padded_size),
         handle.get_stream());
     raft::common::nvtx::pop_range();
+    
 
     // Scatter to the corresponding addresses
     raft::common::nvtx::push_range("Scatter");
@@ -94,7 +102,7 @@ void fix_image_gpu(rmm::device_uvector<int>& to_fix, unsigned long image_size, c
         handle.get_stream());
     raft::common::nvtx::pop_range();
 
-    // // #3 Histogram equalization
+    // #3 Histogram equalization
     rmm::device_uvector<int> histo(256, handle.get_stream());
     raft::common::nvtx::push_range("Compute histogram");
     compute_histogram(raft::device_span<int>(to_fix.data(), image_size),

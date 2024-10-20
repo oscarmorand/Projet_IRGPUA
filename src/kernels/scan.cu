@@ -4,6 +4,11 @@
 
 #include <cuda/atomic>
 
+/** shared memory :
+ * [0, BLOCK_SIZE) -> current block thread sums
+ * BLOCK_SIZE -> custom block ID
+ * BLOCK_SIZE + 1 -> sum of previous blocks
+ */ 
 template <typename T, int BLOCK_SIZE>
 __global__
 void inclusive_scan_kernel(raft::device_span<T> buffer,
@@ -109,112 +114,100 @@ void inclusive_scan(raft::device_span<int> buffer, cudaStream_t stream)
     CUDA_CHECK_ERROR(cudaGetLastError());
 }
 
-// template <typename T, int BLOCK_SIZE>
-// __global__
-// void exclusive_scan_kernel(raft::device_span<T> buffer,
-//                             raft::device_span<int> blockIds,
-//                             raft::device_span<T> local_sums,
-//                             raft::device_span<T> cum_sums,
-//                             raft::device_span<cuda::atomic<char, cuda::thread_scope_device>> flags)
-// {
-//     const unsigned int tid = threadIdx.x;
-//     unsigned int id = threadIdx.x + blockIdx.x * BLOCK_SIZE;
 
-//     if (id >= buffer.size())
-//         return;
+/** shared memory :
+ * [0, BLOCK_SIZE) -> current block thread sums
+ * BLOCK_SIZE -> custom block ID
+ * BLOCK_SIZE + 1 -> sum of previous blocks
+ */ 
+template <typename T, int BLOCK_SIZE>
+__global__
+void exclusive_scan_kernel(raft::device_span<T> buffer,
+                            raft::device_span<int> blockIds,
+                            raft::device_span<T> local_sums,
+                            raft::device_span<T> cum_sums,
+                            raft::device_span<cuda::atomic<char, cuda::thread_scope_device>> flags)
+{
+    const unsigned int tid = threadIdx.x;
+    unsigned int id = threadIdx.x + blockIdx.x * BLOCK_SIZE;
 
-//     // Shared memory init
-//     extern __shared__ T smem[];
-//     smem[tid] = buffer[id];
-//     __syncthreads();
+    if (id >= buffer.size())
+        return;
 
-//     // Dynamic block id
-//     if (tid == 0) {
-//         smem[BLOCK_SIZE] = atomicAdd(blockIds.data(), 1);
-//     }
-//     __syncthreads();
-//     int blockId = smem[BLOCK_SIZE];
+    // Shared memory init
+    extern __shared__ T smem[];
+    smem[tid] = buffer[id];
+    __syncthreads();
 
-//     // Init the flag
-//     if (tid == 0) {
-//         flags[blockId].store(0, cuda::memory_order_seq_cst);
-//         flags[blockId].notify_all();
-//     }
+    // Dynamic block id
+    if (tid == 0) {
+        smem[BLOCK_SIZE] = atomicAdd(blockIds.data(), 1);
+    }
+    __syncthreads();
+    int blockId = smem[BLOCK_SIZE];
 
-//     // Blockwise scan
-//     T first_val = smem[tid];
+    // Init the flag
+    if (tid == 0) {
+        flags[blockId].store(0, cuda::memory_order_seq_cst);
+        flags[blockId].notify_all();
+    }
 
-//     for (int i = 1; i <= BLOCK_SIZE / 2; i *= 2) {
-//         T val = 0;
-//         if (tid >= i) {
-//             val = smem[tid - i];
-//             val += smem[tid];
-//         }
-//         __syncthreads();
-//         if (tid >= i) {
-//             smem[tid] = val;
-//         }
-//         __syncthreads();
-//     }
+    // Blockwise scan
+    T first_val = smem[tid];
 
-//     T local_sum = smem[BLOCK_SIZE - 1];
+    for (int i = 1; i <= BLOCK_SIZE / 2; i *= 2) {
+        T val = 0;
+        if (tid >= i) {
+            val = smem[tid - i];
+            val += smem[tid];
+        }
+        __syncthreads();
+        if (tid >= i) {
+            smem[tid] = val;
+        }
+        __syncthreads();
+    }
 
-//     // Look back pattern
-//     if (tid == BLOCK_SIZE - 1) {
-//         // Init the previous sum in the shared memory;
-//         smem[BLOCK_SIZE + 1] = 0;
+    T local_sum = smem[BLOCK_SIZE - 1];
 
-//         // Publish the blockwise sum
-//         local_sums[blockId] = local_sum;
-//         flags[blockId].store(1, cuda::memory_order_seq_cst);
-//         flags[blockId].notify_all();
+    // Look back pattern
+    if (tid == BLOCK_SIZE - 1) {
+        // Init the previous sum in the shared memory;
+        smem[BLOCK_SIZE + 1] = 0;
 
-//         // Look back
-//         for (int i = blockId - 1; i >= 0; i--) {
-//             if (flags[i] == 0) { // INIT
-//                 // printf("Block %d waiting for %d\n", blockId, i);
-//                 flags[i].wait(0);
-//             }
+        // Publish the blockwise sum
+        local_sums[blockId] = local_sum;
+        flags[blockId].store(1, cuda::memory_order_seq_cst);
+        flags[blockId].notify_all();
 
-//             if (flags[i] == 1) { // READY
-//                 smem[BLOCK_SIZE + 1] += local_sums[i];
-//             }
-//             else { // FINISH
-//                 smem[BLOCK_SIZE + 1] += cum_sums[i];
-//                 break;
-//             }
-//         }
+        // Look back
+        for (int i = blockId - 1; i >= 0; i--) {
+            if (flags[i] == 0) { // INIT
+                // printf("Block %d waiting for %d\n", blockId, i);
+                flags[i].wait(0);
+            }
 
-//         // Publish the full sum
-//         cum_sums[blockId] = smem[BLOCK_SIZE + 1] + local_sum;
-//         flags[blockId].store(2, cuda::memory_order_seq_cst);
-//         flags[blockId].notify_all();
-//     }
-//     __syncthreads();
+            if (flags[i] == 1) { // READY
+                smem[BLOCK_SIZE + 1] += local_sums[i];
+            }
+            else { // FINISH
+                smem[BLOCK_SIZE + 1] += cum_sums[i];
+                break;
+            }
+        }
 
-//     // Propagation of the previous sum
-//     buffer[BLOCK_SIZE * blockId + tid] = smem[tid] + smem[BLOCK_SIZE + 1] - first_val;
-// }
+        // Publish the full sum
+        cum_sums[blockId] = smem[BLOCK_SIZE + 1] + local_sum;
+        flags[blockId].store(2, cuda::memory_order_seq_cst);
+        flags[blockId].notify_all();
+    }
+    __syncthreads();
 
-// void exclusive_scan(raft::device_span<int> buffer, cudaStream_t stream)
-// {
-//     constexpr int blocksize = 64;
-//     const int gridsize = ((buffer.size() + blocksize - 1) / blocksize);
+    // Propagation of the previous sum
+    buffer[BLOCK_SIZE * blockId + tid] = smem[tid] + smem[BLOCK_SIZE + 1] - first_val;
+}
 
-//     rmm::device_scalar<int> blockIds(0, stream);
-//     rmm::device_uvector<int> local_sums(gridsize, stream);
-//     rmm::device_uvector<int> cum_sums(gridsize, stream);
-//     rmm::device_uvector<cuda::atomic<char, cuda::thread_scope_device>> flags(gridsize, stream);
 
-// 	exclusive_scan_kernel<int, blocksize><<<gridsize, blocksize, (blocksize + 2) * sizeof(int), stream>>>(
-//         buffer,
-//         raft::device_span<int>(blockIds.data(), 1),
-//         raft::device_span<int>(local_sums.data(), local_sums.size()),
-//         raft::device_span<int>(cum_sums.data(), cum_sums.size()),
-//         raft::device_span<cuda::atomic<char, cuda::thread_scope_device>>(flags.data(), flags.size()));
-
-//     CUDA_CHECK_ERROR(cudaGetLastError());
-// }
 
 __global__
 void exclusive_scan_kernel(raft::device_span<int> buffer)
@@ -231,8 +224,21 @@ void exclusive_scan_kernel(raft::device_span<int> buffer)
 
 void exclusive_scan(raft::device_span<int> buffer, cudaStream_t stream)
 {
-	exclusive_scan_kernel<<<1, 1, 0, stream>>>(buffer);
+    constexpr int blocksize = 64;
+    const int gridsize = ((buffer.size() + blocksize - 1) / blocksize);
 
+    rmm::device_scalar<int> blockIds(0, stream);
+    rmm::device_uvector<int> local_sums(gridsize, stream);
+    rmm::device_uvector<int> cum_sums(gridsize, stream);
+    rmm::device_uvector<cuda::atomic<char, cuda::thread_scope_device>> flags(gridsize, stream);
+
+	exclusive_scan_kernel<int, blocksize><<<gridsize, blocksize, (blocksize + 2) * sizeof(int), stream>>>(
+        buffer,
+        raft::device_span<int>(blockIds.data(), 1),
+        raft::device_span<int>(local_sums.data(), local_sums.size()),
+        raft::device_span<int>(cum_sums.data(), cum_sums.size()),
+        raft::device_span<cuda::atomic<char, cuda::thread_scope_device>>(flags.data(), flags.size()));
+    //exclusive_scan_kernel<<<1, 1, 0, stream>>>(buffer);
     CUDA_CHECK_ERROR(cudaGetLastError());
 }
 
