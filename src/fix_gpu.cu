@@ -66,8 +66,8 @@ void fix_image_gpu(rmm::device_uvector<int>& to_fix, unsigned long image_size, c
 
     const int padded_size = (std::ceil(static_cast<float>(actual_size) / 64) * 64);
 
-    std::cout << "Actual size: " << actual_size << std::endl;
-    std::cout << "Padded size: " << padded_size << std::endl;
+    // std::cout << "Actual size: " << actual_size << std::endl;
+    // std::cout << "Padded size: " << padded_size << std::endl;
 
     rmm::device_uvector<int> predicate(padded_size, handle.get_stream());
     raft::common::nvtx::push_range("Set predicate");
