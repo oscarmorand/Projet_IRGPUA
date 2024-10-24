@@ -7,6 +7,7 @@
 #include "kernels/scan.cuh"
 #include "kernels/histogram.cuh"
 #include "kernels/equalization.cuh"
+#include "kernels/reduce.cuh"
 
 #include <array>
 #include <numeric>
@@ -56,7 +57,7 @@ void write_uvector_to_file(rmm::device_uvector<int>& d_vector, std::string m = "
 }
 //!!!!!!!!!!!!!!!!!!!!!11
 
-void fix_image_gpu(rmm::device_uvector<int>& to_fix, unsigned long image_size, const raft::handle_t handle)
+void fix_image_gpu(rmm::device_uvector<int>& to_fix, unsigned long image_size, rmm::device_scalar<int>& total, const raft::handle_t handle)
 {
     // Build predicate vector
 
@@ -121,5 +122,13 @@ void fix_image_gpu(rmm::device_uvector<int>& to_fix, unsigned long image_size, c
     equalize_histogram(raft::device_span<int>(to_fix.data(), image_size),
         raft::device_span<int>(histo.data(), 256),
         handle.get_stream());
+    raft::common::nvtx::pop_range();
+
+    // Compute the sum of the image to sort it later
+    raft::common::nvtx::push_range("Reduce sum");
+    reduce_sum(raft::device_span<int>(to_fix.data(), image_size),
+        raft::device_span<int>(total.data(), 1),
+        handle.get_stream());
+    
     raft::common::nvtx::pop_range();
 }

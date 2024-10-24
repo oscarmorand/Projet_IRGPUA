@@ -6,4 +6,4 @@
 
 #include "image.hh"
 
-void fix_image_gpu(rmm::device_uvector<int>& to_fix, unsigned long image_size, const raft::handle_t handle);
+void fix_image_gpu(rmm::device_uvector<int>& to_fix, unsigned long image_size, rmm::device_scalar<int>& total, const raft::handle_t handle);
