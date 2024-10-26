@@ -40,7 +40,7 @@ void reduce_sum(raft::device_span<int> buffer,
     constexpr int blocksize = 64;
     const int gridsize = (((buffer.size() + blocksize - 1) / blocksize) + 1) / 2;
 
-	reduce_sum_kernel<int, blocksize><<<gridsize, blocksize, blocksize * sizeof(int), stream>>>(buffer, total);
+	reduce_sum_kernel<int, blocksize><<<gridsize, blocksize, 0, stream>>>(buffer, total);
 
     CUDA_CHECK_ERROR(cudaGetLastError());
 }
