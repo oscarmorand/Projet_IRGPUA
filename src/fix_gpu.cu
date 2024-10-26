@@ -91,7 +91,7 @@ void fix_image_gpu(rmm::device_uvector<int>& to_fix, unsigned long image_size, r
     // Scatter to the corresponding addresses
     raft::common::nvtx::push_range("Scatter");
     scatter(raft::device_span<int>(to_fix.data(), actual_size),
-        raft::device_span<int>(predicate.data(), actual_size),
+        raft::device_span<int>(predicate.data(), padded_size),
         -27,
         handle.get_stream());
     
@@ -129,6 +129,5 @@ void fix_image_gpu(rmm::device_uvector<int>& to_fix, unsigned long image_size, r
     reduce_sum(raft::device_span<int>(to_fix.data(), image_size),
         raft::device_span<int>(total.data(), 1),
         handle.get_stream());
-    
     raft::common::nvtx::pop_range();
 }

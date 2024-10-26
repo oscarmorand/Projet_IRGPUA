@@ -151,8 +151,7 @@ void gpu_main()
 
     // - Const variables
 
-    constexpr auto TILE_WIDTH = 32;
-    constexpr auto HISTO_SIZE = 256;
+    constexpr int HISTO_SIZE = 256;
 
     // - Memory pool
 
@@ -192,20 +191,19 @@ void gpu_main()
 
         rmm::device_scalar<int> total(0, handle.get_stream());
 
+        // TODO template func with int to pass HISTO_SIZE
         fix_image_gpu(d_image, image_size, total, handle);
+        CUDA_CHECK_ERROR(cudaStreamSynchronize(handle.get_stream()));
 
         // Get back the sum of the image that was computed by the reduce on the GPU
-        int total_host;
         CUDA_CHECK_ERROR(cudaMemcpyAsync(
-            //&(images[i].to_sort.total),
-            &total_host,
+            &(images[i].to_sort.total),
             total.data(),
             sizeof(int),
             cudaMemcpyDeviceToHost,
             handle.get_stream()
         ));
-        images[i].to_sort.total = total_host;
-        //std::cout << "Image #" << i << " sum : " << total_host << std::endl;
+        // std::cout << "Image #" << i << " sum : " << total_host << std::endl;
 
         // Get back the fixed image
         CUDA_CHECK_ERROR(cudaMemcpyAsync(
@@ -230,16 +228,15 @@ void gpu_main()
     // TODO : make it GPU compatible (aka faster)
     // You can use multiple CPU threads for your GPU version using openmp or not
     // Up to you :)
-    /*
-    #pragma omp parallel for
-    for (int i = 0; i < nb_images; ++i)
-    {
-        auto& image = images[i];
-        const int image_size = image.width * image.height;
-        image.to_sort.total = std::reduce(image.buffer, image.buffer + image_size, 0);
-        std::cout << "Image #" << i << " total : " << images[i].to_sort.total << std::endl;
-    }
-    */
+
+    // #pragma omp parallel for
+    // for (int i = 0; i < nb_images; ++i)
+    // {
+    //     auto& image = images[i];
+    //     const int image_size = image.width * image.height;
+    //     image.to_sort.total = std::reduce(image.buffer, image.buffer + image_size, 0);
+    //     // std::cout << "Image #" << i << " total : " << images[i].to_sort.total << std::endl;
+    // }
 
     // - All totals are known, sort images accordingly (OPTIONAL)
     // Moving the actual images is too expensive, sort image indices instead
