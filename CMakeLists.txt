@@ -26,6 +26,8 @@ set(CMAKE_CUDA_ARCHITECTURES "75")
 
 include_directories(src)
 
-add_executable(main src/main.cu src/fix_cpu.cu src/fix_gpu.cu src/fix_gpu_indus.cu src/kernels/map_fix_pixels.cu src/kernels/scatter.cu src/kernels/set_predicate.cu src/kernels/scan.cu src/kernels/histogram.cu src/kernels/equalization.cu src/kernels/reduce.cu)
+add_executable(main src/main.cu src/fix_cpu.cu src/fix_gpu.cu src/fix_gpu_indus.cu src/kernels/map_fix_pixels.cu
+               src/kernels/scatter.cu src/kernels/set_predicate.cu src/kernels/scan.cu src/kernels/histogram.cu
+               src/kernels/equalization.cu src/kernels/reduce.cu src/kernels/set_zeros.cu)
 target_compile_options(main PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=${OpenMP_CXX_FLAGS}>)
 target_link_libraries(main PUBLIC OpenMP::OpenMP_CXX rmm::rmm raft::raft)

@@ -1,5 +1,7 @@
 #include "scan.cuh"
 
+#include "set_zeros.cuh"
+
 #include <rmm/device_scalar.hpp>
 
 #include <cuda/atomic>
@@ -98,13 +100,13 @@ void inclusive_scan_kernel(raft::device_span<T> buffer,
     buffer[id] = smem[tid] + smem[BLOCK_SIZE + 1];
 }
 
-// template <typename T>
-// __global__
-// void inclusive_scan_kernel(raft::device_span<T> buffer)
-// {
-//     for (int i = 1; i < buffer.size(); ++i)
-//         buffer[i] += buffer[i - 1];
-// }
+template <typename T>
+__global__
+void inclusive_scan_kernel(raft::device_span<T> buffer)
+{
+    for (int i = 1; i < buffer.size(); ++i)
+        buffer[i] += buffer[i - 1];
+}
 
 void inclusive_scan(raft::device_span<int> buffer, cudaStream_t stream)
 {
@@ -116,14 +118,17 @@ void inclusive_scan(raft::device_span<int> buffer, cudaStream_t stream)
     rmm::device_uvector<int> cum_sums(gridsize, stream);
     rmm::device_uvector<cuda::atomic<char, cuda::thread_scope_device>> flags(gridsize, stream);
 
-	inclusive_scan_kernel<int, blocksize><<<gridsize, blocksize, (blocksize + 2) * sizeof(int), stream>>>(
-        buffer,
-        raft::device_span<int>(blockIds.data(), 1),
-        raft::device_span<int>(local_sums.data(), local_sums.size()),
-        raft::device_span<int>(cum_sums.data(), cum_sums.size()),
-        raft::device_span<cuda::atomic<char, cuda::thread_scope_device>>(flags.data(), flags.size()));
+    set_zeros(raft::device_span<int>(local_sums.data(), local_sums.size()), 64);
+    set_zeros(raft::device_span<int>(cum_sums.data(), cum_sums.size()), 64);
 
-    // inclusive_scan_kernel<<<1, 1, 0, stream>>>(buffer);
+	// inclusive_scan_kernel<int, blocksize><<<gridsize, blocksize, (blocksize + 2) * sizeof(int), stream>>>(
+    //     buffer,
+    //     raft::device_span<int>(blockIds.data(), 1),
+    //     raft::device_span<int>(local_sums.data(), local_sums.size()),
+    //     raft::device_span<int>(cum_sums.data(), cum_sums.size()),
+    //     raft::device_span<cuda::atomic<char, cuda::thread_scope_device>>(flags.data(), flags.size()));
+
+    inclusive_scan_kernel<<<1, 1, 0, stream>>>(buffer);
 
     CUDA_CHECK_ERROR(cudaGetLastError());
 }
@@ -247,6 +252,9 @@ void exclusive_scan(raft::device_span<int> buffer, cudaStream_t stream)
     rmm::device_uvector<int> local_sums(gridsize, stream);
     rmm::device_uvector<int> cum_sums(gridsize, stream);
     rmm::device_uvector<cuda::atomic<char, cuda::thread_scope_device>> flags(gridsize, stream);
+
+    set_zeros(raft::device_span<int>(local_sums.data(), local_sums.size()), 64);
+    set_zeros(raft::device_span<int>(cum_sums.data(), cum_sums.size()), 64);
 
 	// exclusive_scan_kernel<int, blocksize><<<gridsize, blocksize, (blocksize + 2) * sizeof(int), stream>>>(
     //     buffer,
