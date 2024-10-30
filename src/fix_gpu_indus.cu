@@ -118,7 +118,7 @@ void fix_image_gpu_indus(rmm::device_uvector<int> &to_fix, unsigned long image_s
         fixed_image.data(), d_histo.data(), HISTO_SIZE + 1,
         0, HISTO_SIZE, image_size, handle.get_stream());
 
-    rmm::device_uvector<int> d_temp_storage(temp_storage_bytes / sizeof(int), handle.get_stream());
+    rmm::device_uvector<char> d_temp_storage(temp_storage_bytes, handle.get_stream()); // only 1 byte to prevent "/ sizeof(int)"
 
     cub::DeviceHistogram::HistogramEven(
         d_temp_storage.data(), temp_storage_bytes,
