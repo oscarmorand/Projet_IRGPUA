@@ -29,7 +29,7 @@ struct map_functor
 {
     const int m[4] = {1, -5, 3, -8};
 
-    __device__ int operator()(const int x, const int idx) const
+    __device__ int operator()(const int idx, const int x) const
     {
         return x + m[idx % 4];
     }
@@ -49,7 +49,7 @@ struct histogram_equalization
 
     __device__ int operator()(const int value) const
     {
-        return static_cast<int>(((d_histo_[value] - *cdf_min_) / static_cast<float>(image_size_ - *cdf_min_)) * 255.0f);
+        return roundf(((d_histo_[value] - *cdf_min_) / static_cast<float>(image_size_ - *cdf_min_)) * 255.0f);
     }
 };
 
@@ -98,9 +98,9 @@ void fix_image_gpu_indus(rmm::device_uvector<int> &to_fix, unsigned long image_s
     raft::common::nvtx::push_range("Map fix pixels");
     thrust::counting_iterator<int> idx_begin(0);
     thrust::transform(thrust::cuda::par.on(handle.get_stream()),
-                      fixed_image.begin(),
-                      fixed_image.end(),
                       idx_begin,
+                      idx_begin + image_size,
+                      fixed_image.begin(),
                       fixed_image.begin(),
                       map_functor());
     raft::common::nvtx::pop_range();
