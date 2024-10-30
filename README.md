@@ -1,5 +1,29 @@
 # IRGPUA PROJECT
 
+## AUTHORS
+
+- Ewan Lemonnier
+- Oscar Morand
+- Thomas Xu
+
+## Setup and run
+
+From project root:
+
+- `rm -rf build/` (if exists)
+- `cmake -B build -S .`
+- `cd build`
+- `make -j`
+- `./main <cpu|gpu|gpu_indus>`
+
+## Sources architecture
+
+Kernels (implementation + wrapper) in `src/kernels/{kernel_name}.cu*`
+
+Pipeline code for each version in `src/fix_{version}.cu*`
+
+Main code in `src/main.cu`
+
 ## Project presentation :
 
 ### Introduction :
