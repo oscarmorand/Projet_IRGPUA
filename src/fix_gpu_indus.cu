@@ -19,7 +19,7 @@ struct is_not_garbage
 {
     const int garbage_val = -27;
 
-    __host__ __device__ bool operator()(const int x) const
+    __device__ bool operator()(const int x) const
     {
         return (x != garbage_val);
     }
@@ -29,9 +29,27 @@ struct map_functor
 {
     const int m[4] = {1, -5, 3, -8};
 
-    __host__ __device__ int operator()(const int x, const int idx) const
+    __device__ int operator()(const int idx, const int x) const
     {
         return x + m[idx % 4];
+    }
+};
+
+struct histogram_equalization
+{
+    raft::device_span<int> d_histo_;
+    unsigned long image_size_;
+    int* cdf_min_;
+
+    histogram_equalization(raft::device_span<int> d_histo, unsigned long image_size, int* cdf_min)
+        : d_histo_(d_histo)
+        , image_size_(image_size)
+        , cdf_min_(cdf_min)
+    {}
+
+    __device__ int operator()(const int value) const
+    {
+        return roundf(((d_histo_[value] - *cdf_min_) / static_cast<float>(image_size_ - *cdf_min_)) * 255.0f);
     }
 };
 
@@ -42,36 +60,37 @@ void fix_image_gpu_indus(rmm::device_uvector<int> &to_fix, unsigned long image_s
     raft::common::nvtx::range fix_image_gpu("Fix image GPU");
 
     const int actual_size = to_fix.size();
-    rmm::device_uvector<int> predicate(actual_size, handle.get_stream());
 
-    // copy tofix in buffer_copy
-    thrust::device_vector<int> buffer_copy(to_fix.begin(), to_fix.end());
+    // replace hand made compact with copy_if ?
+
     raft::common::nvtx::push_range("Set predicate");
+    rmm::device_uvector<int> predicate(actual_size, handle.get_stream());
     thrust::transform(thrust::cuda::par.on(handle.get_stream()),
-                      buffer_copy.begin(),
-                      buffer_copy.end(),
+                      to_fix.begin(),
+                      to_fix.end(),
                       predicate.begin(),
                       is_not_garbage());
     raft::common::nvtx::pop_range();
 
     //! Compute the exclusive sum of the predicate
     raft::common::nvtx::push_range("Exclusive scan");
+    rmm::device_uvector<int> predicate_indices(actual_size, handle.get_stream());
     thrust::exclusive_scan(thrust::cuda::par.on(handle.get_stream()),
                            predicate.begin(),
                            predicate.end(),
-                           predicate.begin());
+                           predicate_indices.begin());
     raft::common::nvtx::pop_range();
 
     // Scatter to the corresponding addresses
     raft::common::nvtx::push_range("Scatter");
+    rmm::device_uvector<int> fixed_image(image_size, handle.get_stream());
     thrust::scatter_if(
         thrust::cuda::par.on(handle.get_stream()),
-        buffer_copy.begin(), // Beginning of the sequence of values to scatter.
-        buffer_copy.end(),   // End of the sequence of values to scatter.
-        predicate.begin(),   // Beginning of the sequence of output indices.
-        buffer_copy.begin(), // Beginning of the sequence of predicate values.
-        to_fix.begin(),      // Beginning of the destination range.
-        is_not_garbage()     // Predicate to apply to the stencil values.
+        to_fix.begin(), // Beginning of the sequence of values to scatter.
+        to_fix.end(),   // End of the sequence of values to scatter.
+        predicate_indices.begin(),   // Beginning of the sequence of output indices.
+        predicate.begin(), // Beginning of the sequence of predicate values.
+        fixed_image.begin()      // Beginning of the destination range.
     );
     raft::common::nvtx::pop_range();
 
@@ -79,60 +98,60 @@ void fix_image_gpu_indus(rmm::device_uvector<int> &to_fix, unsigned long image_s
     raft::common::nvtx::push_range("Map fix pixels");
     thrust::counting_iterator<int> idx_begin(0);
     thrust::transform(thrust::cuda::par.on(handle.get_stream()),
-                      to_fix.begin(),
-                      to_fix.end(),
                       idx_begin,
-                      to_fix.begin(),
+                      idx_begin + image_size,
+                      fixed_image.begin(),
+                      fixed_image.begin(),
                       map_functor());
     raft::common::nvtx::pop_range();
 
-    // // #3 Histogram equalization
+    // #3 Histogram equalization
+
+    const int HISTO_SIZE = 256;
 
     raft::common::nvtx::push_range("Compute histogram");
-    //! Does not work
-    void *d_temp_storage = nullptr;
     size_t temp_storage_bytes = 0;
-    int *d_histo;
-    CUDA_CHECK_ERROR(cudaMalloc(&d_histo, 256 * sizeof(int)));
+
+    rmm::device_uvector<int> d_histo(HISTO_SIZE, handle.get_stream());
+    cub::DeviceHistogram::HistogramEven(
+        nullptr, temp_storage_bytes,
+        fixed_image.data(), d_histo.data(), HISTO_SIZE + 1,
+        0, HISTO_SIZE, image_size, handle.get_stream());
+
+    rmm::device_uvector<char> d_temp_storage(temp_storage_bytes, handle.get_stream()); // only 1 byte to prevent "/ sizeof(int)"
 
     cub::DeviceHistogram::HistogramEven(
-        d_temp_storage, temp_storage_bytes,
-        to_fix.data(), d_histo, 256,
-        0, 256, image_size);
-
-    CUDA_CHECK_ERROR(cudaMalloc(&d_temp_storage, temp_storage_bytes));
-
-    cub::DeviceHistogram::HistogramEven(
-        d_temp_storage, temp_storage_bytes,
-        to_fix.data(), d_histo, 256,
-        0, 256, image_size);
-
+        d_temp_storage.data(), temp_storage_bytes,
+        fixed_image.data(), d_histo.data(), HISTO_SIZE + 1,
+        0, HISTO_SIZE, image_size, handle.get_stream());
     raft::common::nvtx::pop_range();
 
     // Compute the inclusive sum scan of the histogram
     raft::common::nvtx::push_range("Inclusive scan");
-    thrust::device_vector<int> thrust_d_histo = thrust::device_vector<int>(d_histo, d_histo + 256);
     thrust::inclusive_scan(thrust::cuda::par.on(handle.get_stream()),
-                           thrust_d_histo.begin(),
-                           thrust_d_histo.end(),
-                           thrust_d_histo.begin());
-
+                           d_histo.begin(),
+                           d_histo.end(),
+                           d_histo.begin());
     raft::common::nvtx::pop_range();
 
     // Histogram equalization of the image
     raft::common::nvtx::push_range("Equalize histogram");
-    int cdf_min = *(thrust::find_if(thrust::cuda::par.on(handle.get_stream()), 
-                                    thrust_d_histo.begin(),
-                                    thrust_d_histo.end(),
-                                    [] __device__(int x) { return x != 0; }));
-    int cdf_max = thrust_d_histo[255];
-    float cdf_range = static_cast<float>(cdf_max - cdf_min);
+    auto found_iter = thrust::find_if(thrust::cuda::par.on(handle.get_stream()), 
+                                      d_histo.begin(),
+                                      d_histo.end(),
+                                      [] __device__ (int x) { return x != 0; });
+    int* cdf_min = thrust::raw_pointer_cast(&(*found_iter));
+
+    histogram_equalization histo_equal(raft::device_span<int>(d_histo.data(), HISTO_SIZE), image_size, cdf_min);
+
     thrust::transform(thrust::cuda::par.on(handle.get_stream()),
-                      to_fix.begin(),
-                      to_fix.end(),
-                      to_fix.begin(),
-                      [=] __device__ (int value) {
-                          return static_cast<int>(((thrust_d_histo[value] - cdf_min) / cdf_range) * 255.0f);
-                      });
+                      fixed_image.begin(),
+                      fixed_image.end(),
+                      fixed_image.begin(),
+                      histo_equal);
+    raft::common::nvtx::pop_range();
+
+    raft::copy(to_fix.data(), fixed_image.data(), image_size, handle.get_stream());
+
     raft::common::nvtx::pop_range();
 }
