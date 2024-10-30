@@ -408,8 +408,6 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[])
         cpu_main();
     } else if (strcmp(argv[1], "gpu") == 0) {
         gpu_main();
-    // } else if (strcmp(argv[1], "gpu_indus") == 0) {
-    //     gpu_indus_main();
     } else if (strcmp(argv[1], "gpu_indus") == 0) {
         gpu_indus_main();
     } else {
